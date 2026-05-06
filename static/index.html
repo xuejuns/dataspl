@@ -1,0 +1,2233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Chat Demo</title>
+    <!-- 引入 Cytoscape.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+    <!-- 引入 Font Awesome 图标 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 24px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 24px;
+        }
+
+        .chat-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            height: 500px;
+            overflow-y: auto;
+            margin-bottom: 16px;
+            background: #fafafa;
+        }
+
+        .message {
+            margin-bottom: 12px;
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .message.user {
+            background: #e3f2fd;
+            margin-left: 20%;
+        }
+
+        .message.assistant {
+            background: #f3e5f5;
+            margin-right: 20%;
+        }
+
+        .message .label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .thinking {
+            color: #ff9800;
+            font-style: italic;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 12px;
+        }
+
+        input[type="text"], input[type="password"] {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+        }
+
+        input[type="text"]:focus, input[type="password"]:focus {
+            border-color: #2196f3;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            background: #1976d2;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            text-align: center;
+            padding: 8px;
+            margin-bottom: 12px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .status.connecting {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status.waiting {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .login-form {
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+        }
+
+        .login-btn {
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        .user-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #e8f5e9;
+            border-radius: 8px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* 主容器布局 - 并排显示 */
+        .main-container {
+            display: flex;
+            margin-top: 20px;
+            gap: 20px;
+        }
+
+        /* 聊天区域 - 占1/3宽度 */
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            transition: width 0.3s ease;
+        }
+
+        .chat-section.collapsed {
+            width: 40px !important;
+            flex: 0 !important;
+        }
+
+        .chat-section.collapsed .chat-title,
+        .chat-section.collapsed .chat-container,
+        .chat-section.collapsed .input-area {
+            display: none;
+        }
+
+        .chat-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            color: #333;
+        }
+
+        /* 时序图区域 - 占2/3宽度 */
+        .timeline-section {
+            flex: 2;
+            min-width: 0;
+            transition: flex 0.3s ease;
+        }
+
+        /* 分隔栏 */
+        .splitter {
+            width: 8px;
+            background: #e0e0e0;
+            cursor: col-resize;
+            border-radius: 4px;
+            position: relative;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+
+        .splitter:hover {
+            background: #2196f3;
+        }
+
+        .splitter::before {
+            content: '⋮';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #999;
+            font-size: 16px;
+            writing-mode: vertical-rl;
+            letter-spacing: 2px;
+        }
+
+        .splitter:hover::before {
+            color: white;
+        }
+
+        .splitter.collapsed {
+            background: #ccc;
+        }
+
+        .splitter.collapsed::before {
+            content: '›';
+            writing-mode: horizontal-tb;
+            font-size: 18px;
+        }
+
+        /* 时序图谱样式 */
+        .timeline-container {
+            margin-top: 0;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            background: white;
+            position: relative;
+        }
+
+        .timeline-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            color: #333;
+        }
+
+        #cytoscape-graph {
+            width: 100%;
+            height: 500px;
+            background: #fafafa;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            position: relative;
+        }
+
+        @media (max-width: 900px) {
+            .main-container {
+                flex-direction: column;
+            }
+            .chat-section, .timeline-section {
+                flex: none;
+                width: 100%;
+            }
+            .splitter {
+                display: none;
+            }
+        }
+
+        /* 控制按钮容器 */
+        .graph-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 6px;
+            z-index: 9999;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 6px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            pointer-events: auto;
+        }
+
+        .graph-control-btn {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            color: #555;
+            font-size: 14px;
+            padding: 0;
+            pointer-events: auto;
+            position: relative;
+            z-index: 10000;
+        }
+
+        .graph-control-btn:hover {
+            background: #2196f3;
+            color: white;
+        }
+
+        .graph-control-btn:active {
+            transform: scale(0.9);
+        }
+
+        /* 全屏模式 */
+        .timeline-section.fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 9999;
+            margin: 0;
+            padding: 24px;
+            background: white;
+            border-radius: 0;
+        }
+
+        .timeline-section.fullscreen .timeline-title {
+            margin: 16px;
+        }
+
+        .timeline-section.fullscreen #cytoscape-graph {
+            height: calc(100vh - 200px);
+            border-radius: 0;
+            border: none;
+        }
+
+        .timeline-section.fullscreen .graph-controls {
+            top: 16px;
+            right: 16px;
+        }
+
+        .timeline-slider-container {
+            margin-top: 16px;
+            padding: 16px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* 播放按钮样式 */
+        .play-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: linear-gradient(135deg, #2196f3, #1976d2);
+            color: white;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            font-size: 16px;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+        }
+
+        .play-btn:hover {
+            background: linear-gradient(135deg, #1976d2, #1565c0);
+            transform: scale(1.08);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+        }
+
+        .play-btn:active {
+            transform: scale(0.95);
+        }
+
+        .play-btn.playing {
+            background: linear-gradient(135deg, #ff5722, #f44336);
+            animation: pulse 1.5s infinite;
+            box-shadow: 0 2px 12px rgba(255, 87, 34, 0.4);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .timeline-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        #timeline-slider {
+            width: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(to right, #2196f3, #ff9800);
+            outline: none;
+        }
+
+        #timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #1976d2;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        #timeline-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #1976d2;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            border: none;
+        }
+
+        #current-time {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 14px;
+            color: #1976d2;
+            font-weight: bold;
+        }
+
+        .legend {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+
+        /* AISPL生成弹窗样式 */
+        .aispl-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10001;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .aispl-modal-overlay.active {
+            display: flex;
+        }
+
+        .aispl-modal {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            width: 600px;
+            max-width: 90vw;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .aispl-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .aispl-modal-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .aispl-modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 20px;
+            color: #666;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .aispl-modal-close:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .aispl-requirement-group {
+            margin-bottom: 16px;
+        }
+
+        .aispl-requirement-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .aispl-requirement-group textarea {
+            width: 100%;
+            height: 100px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            resize: vertical;
+            font-family: inherit;
+            outline: none;
+        }
+
+        .aispl-requirement-group textarea:focus {
+            border-color: #2196f3;
+        }
+
+        .aispl-result-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .aispl-result-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .aispl-result-output {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #333;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            min-height: 120px;
+            max-height: 200px;
+        }
+
+        .aispl-result-output:empty::before {
+            content: '生成的AISPL语句将显示在这里...';
+            color: #999;
+        }
+
+        .aispl-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .aispl-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .aispl-btn-primary {
+            background: #2196f3;
+            color: white;
+        }
+
+        .aispl-btn-primary:hover:not(:disabled) {
+            background: #1976d2;
+        }
+
+        .aispl-btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .aispl-btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .aispl-btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        /* 工具栏按钮 */
+        .toolbar-btn {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #7b1fa2, #6a1b9a);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .toolbar-btn:hover {
+            background: linear-gradient(135deg, #6a1b9a, #4a148c);
+            transform: translateY(-1px);
+        }
+
+        .toolbar-container {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        /* Skill 弹窗样式 */
+        .skill-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10001;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .skill-modal-overlay.active {
+            display: flex;
+        }
+
+        .skill-modal {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            width: 700px;
+            max-width: 90vw;
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .skill-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .skill-modal-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .skill-modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 20px;
+            color: #666;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .skill-modal-close:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .skill-list-container {
+            display: flex;
+            gap: 16px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .skill-list-panel {
+            width: 200px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .skill-list-header {
+            padding: 12px;
+            background: #f5f5f5;
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .skill-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .skill-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background 0.2s;
+        }
+
+        .skill-item:hover {
+            background: #f0f0f0;
+        }
+
+        .skill-item.selected {
+            background: #e3f2fd;
+            border-left: 3px solid #2196f3;
+        }
+
+        .skill-item-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .skill-item-desc {
+            font-size: 11px;
+            color: #999;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .skill-detail-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .skill-detail-header {
+            margin-bottom: 12px;
+        }
+
+        .skill-detail-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .skill-detail-desc {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .skill-input-group {
+            margin-bottom: 12px;
+        }
+
+        .skill-input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .skill-input-group textarea {
+            width: 100%;
+            height: 100px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            resize: vertical;
+            font-family: inherit;
+            outline: none;
+        }
+
+        .skill-input-group textarea:focus {
+            border-color: #2196f3;
+        }
+
+        .skill-output-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .skill-output-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .skill-output {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #333;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            min-height: 120px;
+        }
+
+        .skill-output:empty::before {
+            content: 'Skill 执行结果将显示在这里...';
+            color: #999;
+        }
+
+        .skill-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .skill-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .skill-btn-primary {
+            background: #7b1fa2;
+            color: white;
+        }
+
+        .skill-btn-primary:hover:not(:disabled) {
+            background: #6a1b9a;
+        }
+
+        .skill-btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .skill-btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .skill-btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .skill-empty-hint {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #999;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 登录页面 -->
+    <div id="loginPage" class="container">
+        <h1>登录</h1>
+        <div class="login-form">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="username" placeholder="admin" value="admin">
+            </div>
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" id="password" placeholder="123456" value="123456">
+            </div>
+            <button class="login-btn" onclick="login()">登录</button>
+        </div>
+        <p style="text-align: center; margin-top: 16px; color: #666; font-size: 14px;">
+            默认账号: admin / 123456
+        </p>
+    </div>
+
+    <!-- 聊天页面 -->
+    <div id="chatPage" class="container hidden">
+        <div class="user-info">
+            <span>已登录：<strong>admin</strong></span>
+            <button onclick="logout()" style="padding: 6px 12px; font-size: 14px;">退出</button>
+        </div>
+
+        <h1>基于AISPL的根因分析Demo</h1>
+
+        <div class="toolbar-container">
+            <button class="toolbar-btn" onclick="openSkillModal()">
+                <i class="fas fa-gears"></i> Skills
+            </button>
+            <button class="toolbar-btn" onclick="openAisplModal()">
+                <i class="fas fa-magic"></i> 生成AISPL
+            </button>
+        </div>
+
+        <div id="status" class="status">准备就绪</div>
+
+        <!-- 主容器布局 - 并排显示 -->
+        <div class="main-container">
+            <!-- 聊天区域 - 占1/3宽度 -->
+            <div class="chat-section" id="chatSection">
+                <div class="chat-title">💬 聊天</div>
+                <div id="chat" class="chat-container"></div>
+                <div class="input-area">
+                    <input
+                        type="text"
+                        id="messageInput"
+                        placeholder="输入消息..."
+                        maxlength="200"
+                    >
+                    <button id="sendBtn" onclick="sendMessage()">发送</button>
+                </div>
+            </div>
+
+            <!-- 分隔栏 -->
+            <div class="splitter" id="splitter" onclick="toggleCollapse()"></div>
+
+            <!-- 时序图谱区域 - 占2/3宽度 -->
+            <div class="timeline-section" id="timelineSection">
+                <div class="timeline-container">
+                    <div class="timeline-title">📊 时序图谱分析</div>
+                    <div id="cytoscape-graph">
+                        <div class="graph-controls">
+                            <button class="graph-control-btn" onclick="zoomIn()" title="放大">
+                                <i class="fas fa-search-plus"></i>
+                            </button>
+                            <button class="graph-control-btn" onclick="zoomOut()" title="缩小">
+                                <i class="fas fa-search-minus"></i>
+                            </button>
+                            <button class="graph-control-btn" onclick="toggleFullscreen()" title="全屏">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="timeline-slider-container">
+                        <!-- 播放按钮 -->
+                        <button class="play-btn" id="playBtn" onclick="togglePlay()" title="播放">
+                            <i class="fas fa-play"></i>
+                        </button>
+
+                        <div style="flex: 1;">
+                            <div class="timeline-labels">
+                                <span>T-0ms</span>
+                                <span>T-350ms</span>
+                                <span>T-7000ms</span>
+                                <span>T-1050ms</span>
+                                <span>T-1400ms+</span>
+                            </div>
+                            <input
+                                type="range"
+                                id="timeline-slider"
+                                min="0"
+                                max="100"
+                                value="100"
+                                step="1"
+                            >
+                            <div id="current-time">当前时间：T-1400ms</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AISPL生成弹窗 -->
+    <div class="aispl-modal-overlay" id="aisplModal">
+        <div class="aispl-modal">
+            <div class="aispl-modal-header">
+                <span class="aispl-modal-title">生成AISPL语句</span>
+                <button class="aispl-modal-close" onclick="closeAisplModal()">&times;</button>
+            </div>
+            <div class="aispl-requirement-group">
+                <label>输入您的日志分析需求（自然语言）</label>
+                <textarea id="aisplRequirement" placeholder="例如：查询最近3天内，源地址为192.168.1.100的告警事件，统计每天的事件数量"></textarea>
+            </div>
+            <div class="aispl-result-group">
+                <label>生成的AISPL语句</label>
+                <div class="aispl-result-output" id="aisplResult"></div>
+            </div>
+            <div class="aispl-actions">
+                <button class="aispl-btn aispl-btn-secondary" onclick="closeAisplModal()">关闭</button>
+                <button class="aispl-btn aispl-btn-primary" id="aisplGenerateBtn" onclick="generateAispl()">
+                    <i class="fas fa-magic"></i> 生成
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skill弹窗 -->
+    <div class="skill-modal-overlay" id="skillModal">
+        <div class="skill-modal">
+            <div class="skill-modal-header">
+                <span class="skill-modal-title"><i class="fas fa-gears"></i> Skills</span>
+                <button class="skill-modal-close" onclick="closeSkillModal()">&times;</button>
+            </div>
+            <div class="skill-list-container">
+                <div class="skill-list-panel">
+                    <div class="skill-list-header">可用技能</div>
+                    <div class="skill-list" id="skillList">
+                        <div class="skill-empty-hint">加载中...</div>
+                    </div>
+                </div>
+                <div class="skill-detail-panel">
+                    <div class="skill-detail-header">
+                        <div class="skill-detail-name" id="skillDetailName">选择一个Skill</div>
+                        <div class="skill-detail-desc" id="skillDetailDesc">从左侧列表选择一个技能来执行</div>
+                    </div>
+                    <div class="skill-input-group">
+                        <label>输入</label>
+                        <textarea id="skillInput" placeholder="输入 Skill 的输入内容..."></textarea>
+                    </div>
+                    <div class="skill-output-group">
+                        <label>输出</label>
+                        <div class="skill-output" id="skillOutput"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="skill-actions">
+                <button class="skill-btn skill-btn-secondary" onclick="closeSkillModal()">关闭</button>
+                <button class="skill-btn skill-btn-primary" id="skillExecuteBtn" onclick="executeSkill()" disabled>
+                    <i class="fas fa-play"></i> 执行
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Token 管理
+        let authToken = localStorage.getItem('auth_token');
+
+        // 时序图谱数据（Mock 数据库）- 网络安全攻击场景
+        const mockTimelineData = [
+            {
+                id: 'recon1',
+                type: 'user_request',
+                label: '端口扫描',
+                startTime: 0,
+                endTime: 100,
+                description: '攻击者开始扫描目标主机开放端口'
+            },
+            {
+                id: 'vuln1',
+                type: 'system_process',
+                label: '漏洞探测',
+                startTime: 100,
+                endTime: 300,
+                description: '检测到 SSH 服务 (22 端口) 存在弱密码漏洞'
+            },
+            {
+                id: 'exploit1',
+                type: 'llm_call',
+                label: '暴力破解',
+                startTime: 300,
+                endTime: 350,
+                description: '使用字典攻击尝试 SSH 登录'
+            },
+            {
+                id: 'privesc1',
+                type: 'llm_stream',
+                label: '权限提升',
+                startTime: 350,
+                endTime: 550,
+                description: '利用内核漏洞获取 root 权限',
+                branch: true
+            },
+            {
+                id: 'access1',
+                type: 'llm_stream',
+                label: '获取访问权限',
+                startTime: 600,
+                endTime: 700,
+                description: '成功以 admin/root 身份登录'
+            },
+            {
+                id: 'persist1',
+                type: 'llm_stream',
+                label: '植入后门',
+                startTime: 700,
+                endTime: 900,
+                description: '创建隐藏账户和 SSH 密钥'
+            },
+            {
+                id: 'lateral1',
+                type: 'response',
+                label: '横向移动',
+                startTime: 800,
+                endTime: 900,
+                description: '扫描内网其他主机并渗透'
+            },
+            {
+                id: 'exfil1',
+                type: 'user_request',
+                label: '数据窃取',
+                startTime: 1000,
+                endTime: 1100,
+                description: '打包敏感数据并通过加密通道外传'
+            },
+            {
+                id: 'encrypt1',
+                type: 'llm_stream',
+                label: '数据加密',
+                startTime: 1200,
+                endTime: 1300,
+                description: '使用 AES-256 加密窃取的数据',
+                branch: true
+            }
+        ];
+
+        // 定义节点连接关系（用于分支）
+        const nodeConnections = [
+            { source: 'recon1', target: 'vuln1' },
+            { source: 'vuln1', target: 'exploit1' },
+            { source: 'exploit1', target: 'privesc1' },
+            { source: 'privesc1', target: 'access1' },
+            { source: 'exploit1', target: 'access1' },
+            { source: 'access1', target: 'persist1' },
+            { source: 'persist1', target: 'lateral1' },
+            { source: 'lateral1', target: 'exfil1' },
+            { source: 'exfil1', target: 'encrypt1' }
+        ];
+
+        // 节点颜色配置 - 网络安全主题
+        const nodeColors = {
+            user_request: '#d32f2f',    // 红色：攻击行为
+            system_process: '#1976d2',   // 蓝色：系统防御
+            llm_call: '#f57c00',         // 橙色：利用阶段
+            llm_stream: '#7b1fa2',       // 紫色：持久化/横向
+            response: '#388e3c'          // 绿色：响应恢复
+        };
+
+        let cytoscapeGraph = null;
+        let currentTime = 1400; // 默认显示到最后（最大值）
+        let allNodesInitialized = false; // 标记是否已初始化所有节点
+
+        // 初始化 Cytoscape 图谱
+        function initCytoscape() {
+            // 预先创建所有节点和边（隐藏不需要的）
+            const allElements = [];
+            
+            mockTimelineData.forEach((event, index) => {
+                allElements.push({
+                    data: {
+                        id: event.id,
+                        label: event.label,
+                        type: event.type,
+                        description: event.description,
+                        startTime: event.startTime,
+                        endTime: event.endTime,
+                        branch: event.branch || false
+                    },
+                    position: calculatePosition(event, index)
+                });
+            });
+
+            // 使用连接关系创建边
+            nodeConnections.forEach(conn => {
+                const sourceEvent = mockTimelineData.find(e => e.id === conn.source);
+                const targetEvent = mockTimelineData.find(e => e.id === conn.target);
+                if (sourceEvent && targetEvent) {
+                    allElements.push({
+                        data: {
+                            source: conn.source,
+                            target: conn.target,
+                            isBranch: (sourceEvent.branch || targetEvent.branch)
+                        }
+                    });
+                }
+            });
+            
+            cytoscapeGraph = cytoscape({
+                container: document.getElementById('cytoscape-graph'),
+                elements: allElements,
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'background-color': (ele) => nodeColors[ele.data('type')] || '#999',
+                            'label': 'data(label)',
+                            'color': '#fff',
+                            'font-size': '10px',
+                            'font-weight': 'bold',
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'width': 40,
+                            'height': 40,
+                            'border-width': 2,
+                            'border-color': '#333',
+                            'text-outline-width': 1,
+                            'text-outline-color': '#333'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 2,
+                            'line-color': '#bbb',
+                            'target-arrow-color': '#999',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                            'opacity': 0.8,
+                            'z-index': 1
+                        }
+                    },
+                    {
+                        selector: 'edge[isBranch]',
+                        style: {
+                            'width': 1.5,
+                            'line-color': '#999',
+                            'target-arrow-color': '#888',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                            'line-style': 'dashed',
+                            'opacity': 0.6,
+                            'z-index': 0
+                        }
+                    },
+                    {
+                        selector: 'node.hidden',
+                        style: {
+                            'display': 'none'
+                        }
+                    },
+                    {
+                        selector: 'edge.hidden',
+                        style: {
+                            'display': 'none'
+                        }
+                    },
+                    {
+                        selector: 'node.highlighted',
+                        style: {
+                            'border-width': 3,
+                            'border-color': '#FF5722',
+                            'width': 45,
+                            'height': 45
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'preset',
+                    padding: 20,
+                    fit: true,
+                    animate: false
+                },
+                zoom: 1,
+                minZoom: 0.3,
+                maxZoom: 3,
+                wheelSensitivity: 0.2,
+                boxSelectionEnabled: false,
+                autounselectify: true,
+                hideEdgesOnViewport: false,
+                textureOnViewport: false,
+                motionBlur: false
+            });
+
+            // 节点点击事件
+            cytoscapeGraph.on('tap', 'node', function(event) {
+                const node = event.target;
+                alert(`${node.data('label')}\n${node.data('description')}\n时间：${node.data('startTime')}ms - ${node.data('endTime')}ms`);
+            });
+            
+            // 确保初始渲染正确
+            setTimeout(() => {
+                if (cytoscapeGraph) {
+                    updateNodeVisibility(currentTime);
+                    cytoscapeGraph.fit({
+                        elements: cytoscapeGraph.elements(),
+                        padding: 50
+                    });
+                }
+            }, 100);
+        }
+
+        // 根据当前时间生成图谱元素
+        function generateGraphElements(timeLimit) {
+            const nodes = [];
+            const edges = [];
+
+            // 筛选出在当前时间之前的事件
+            const activeEvents = mockTimelineData.filter(e => e.startTime < timeLimit);
+
+            // 生成节点
+            activeEvents.forEach((event, index) => {
+                if (event.endTime <= timeLimit) {
+                    nodes.push({
+                        data: {
+                            id: event.id,
+                            label: event.label,
+                            type: event.type,
+                            description: event.description,
+                            startTime: event.startTime,
+                            endTime: event.endTime
+                        },
+                        position: calculatePosition(event, index)
+                    });
+                }
+            });
+
+            // 生成边（表示时序关系）
+            for (let i = 0; i < activeEvents.length - 1; i++) {
+                const current = activeEvents[i];
+                const next = activeEvents[i + 1];
+                
+                if (current.endTime <= timeLimit && next.startTime <= timeLimit) {
+                    edges.push({
+                        data: {
+                            source: current.id,
+                            target: next.id
+                        }
+                    });
+                }
+            }
+
+            return [...nodes, ...edges];
+        }
+
+        // 计算节点位置（按时间轴水平排列，均匀分布）
+        function calculatePosition(event, index) {
+            const baseX = 80;
+            const baseY = 250;
+            const xSpacing = 55; // 增大水平间距，让节点更分散
+            const yOffset = (index % 2) * 120 - 60; // 2行交替排列，增大垂直偏移
+
+            return {
+                x: baseX + (event.startTime / 100) * xSpacing,
+                y: baseY + yOffset
+            };
+        }
+
+        // 更新时间轴
+        function updateTimeline(value) {
+            const maxTime = 1400; // 更新最大时间到 1400ms
+            currentTime = (value / 100) * maxTime;
+            
+            document.getElementById('current-time').textContent = 
+                `当前时间：T-${Math.round(currentTime)}ms`;
+            
+            // 只更新节点和边的可见性，不重新渲染
+            if (cytoscapeGraph) {
+                updateNodeVisibility(currentTime);
+            }
+        }
+
+        // 更新节点和边的可见性
+        function updateNodeVisibility(timeLimit) {
+            if (!cytoscapeGraph) return;
+            
+            mockTimelineData.forEach((event, index) => {
+                const node = cytoscapeGraph.getElementById(event.id);
+                if (node.length > 0) {
+                    // 如果节点的结束时间小于等于当前时间，则显示
+                    if (event.endTime <= timeLimit) {
+                        node.removeClass('hidden');
+                    } else {
+                        node.addClass('hidden');
+                    }
+                }
+            });
+            
+            // 更新边的可见性
+            const allEdges = cytoscapeGraph.edges();
+            allEdges.forEach(edge => {
+                const sourceNode = edge.source();
+                const targetNode = edge.target();
+                
+                // 只有当源节点和目标节点都可见时，边才可见
+                if (!sourceNode.hasClass('hidden') && !targetNode.hasClass('hidden')) {
+                    edge.removeClass('hidden');
+                } else {
+                    edge.addClass('hidden');
+                }
+            });
+        }
+
+        // 分隔栏折叠功能
+        let isCollapsed = false;
+        function toggleCollapse() {
+            const chatSection = document.getElementById('chatSection');
+            const splitter = document.getElementById('splitter');
+            isCollapsed = !isCollapsed;
+
+            if (isCollapsed) {
+                chatSection.classList.add('collapsed');
+                splitter.classList.add('collapsed');
+                splitter.title = '展开聊天';
+            } else {
+                chatSection.classList.remove('collapsed');
+                splitter.classList.remove('collapsed');
+                splitter.title = '折叠聊天';
+            }
+        }
+
+        // 放大功能
+        function zoomIn() {
+            if (cytoscapeGraph) {
+                const currentZoom = cytoscapeGraph.zoom();
+                cytoscapeGraph.animate({
+                    zoom: Math.min(currentZoom * 1.3, cytoscapeGraph.maxZoom()),
+                    duration: 200
+                });
+            }
+        }
+
+        // 缩小功能
+        function zoomOut() {
+            if (cytoscapeGraph) {
+                const currentZoom = cytoscapeGraph.zoom();
+                cytoscapeGraph.animate({
+                    zoom: Math.max(currentZoom / 1.3, cytoscapeGraph.minZoom()),
+                    duration: 200
+                });
+            }
+        }
+
+        // 全屏切换
+        let isFullscreen = false;
+        function toggleFullscreen() {
+            const container = document.getElementById('timelineSection');
+            const chatSection = document.getElementById('chatSection');
+            const splitter = document.getElementById('splitter');
+            isFullscreen = !isFullscreen;
+
+            if (isFullscreen) {
+                container.classList.add('fullscreen');
+                chatSection.style.display = 'none';
+                splitter.style.display = 'none';
+                // 调整图谱大小
+                setTimeout(() => {
+                    if (cytoscapeGraph) {
+                        cytoscapeGraph.resize();
+                        cytoscapeGraph.fit(20);
+                    }
+                }, 100);
+            } else {
+                container.classList.remove('fullscreen');
+                chatSection.style.display = '';
+                splitter.style.display = '';
+                // 恢复原始大小
+                setTimeout(() => {
+                    if (cytoscapeGraph) {
+                        cytoscapeGraph.resize();
+                        cytoscapeGraph.fit(20);
+                    }
+                }, 100);
+            }
+        }
+
+        // ESC 键退出全屏
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && isFullscreen) {
+                toggleFullscreen();
+            }
+        });
+
+        // 播放功能
+        let isPlaying = false;
+        let playInterval = null;
+        let playProgress = 0; // 使用浮点数记录进度
+        let playSpeed = 0.25; // 放慢 2 倍，从 0.5 改为 0.25
+
+        function togglePlay() {
+            if (!timelineSlider) {
+                console.error('滑块未初始化');
+                return;
+            }
+            
+            const playBtn = document.getElementById('playBtn');
+            
+            if (isPlaying) {
+                // 停止播放
+                clearInterval(playInterval);
+                isPlaying = false;
+                playBtn.classList.remove('playing');
+                playBtn.innerHTML = '<i class="fas fa-play"></i>';
+                playBtn.title = '播放';
+            } else {
+                // 开始播放
+                isPlaying = true;
+                playBtn.classList.add('playing');
+                playBtn.innerHTML = '<i class="fas fa-pause"></i>';
+                playBtn.title = '暂停';
+                
+                // 从当前滑块位置继续
+                playProgress = parseFloat(timelineSlider.value);
+                
+                playInterval = setInterval(() => {
+                    playProgress += playSpeed;
+                    
+                    // 到达终点时停止
+                    if (playProgress >= 100) {
+                        playProgress = 100;
+                        timelineSlider.value = 100;
+                        updateTimeline(100);
+                        togglePlay(); // 停止并重置按钮
+                        return;
+                    }
+                    
+                    // 更新滑块和图谱
+                    timelineSlider.value = Math.floor(playProgress);
+                    updateTimeline(Math.floor(playProgress));
+                }, 50); // 每 50ms 更新一次
+            }
+        }
+
+        // 页面初始化时绑定滑块事件
+        let timelineSlider = null;
+        
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 获取滑块引用
+            timelineSlider = document.getElementById('timeline-slider');
+            
+            // 初始化图谱
+            initCytoscape();
+            
+            // 绑定时间轴滑块事件
+            timelineSlider.addEventListener('input', function(e) {
+                updateTimeline(parseInt(e.target.value));
+            });
+            
+            if (authToken) {
+                // 验证 token 是否有效
+                const valid = await verifyToken(authToken);
+                if (valid) {
+                    showChatPage();
+                } else {
+                    // Token 已过期，清除并显示登录页
+                    authToken = null;
+                    localStorage.removeItem('auth_token');
+                    showLoginPage();
+                    alert('登录已过期，请重新登录');
+                }
+            } else {
+                showLoginPage();
+            }
+        });
+
+        async function verifyToken(token) {
+            try {
+                const response = await fetch(`/api/verify?token=${encodeURIComponent(token)}`);
+                const data = await response.json();
+                return data.valid;
+            } catch (error) {
+                console.error('验证 token 失败:', error);
+                return false;
+            }
+        }
+
+        function showLoginPage() {
+            document.getElementById('loginPage').classList.remove('hidden');
+            document.getElementById('chatPage').classList.add('hidden');
+        }
+
+        function showChatPage() {
+            document.getElementById('loginPage').classList.add('hidden');
+            document.getElementById('chatPage').classList.remove('hidden');
+            document.getElementById('messageInput').focus();
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+
+            if (!username || !password) {
+                alert('请输入用户名和密码');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.token) {
+                    authToken = data.token;
+                    localStorage.setItem('auth_token', authToken);
+                    showChatPage();
+                } else {
+                    alert(data.message || '登录失败');
+                }
+            } catch (error) {
+                alert('登录请求失败: ' + error.message);
+            }
+        }
+
+        function logout() {
+            authToken = null;
+            localStorage.removeItem('auth_token');
+            showLoginPage();
+        }
+
+        // 聊天功能
+        const chatContainer = document.getElementById('chat');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusDiv = document.getElementById('status');
+
+        let isWaiting = false;
+        let currentAssistantMsg = null;
+        let responseBuffer = '';
+
+        function updateStatus(text, className) {
+            statusDiv.textContent = text;
+            statusDiv.className = 'status ' + className;
+        }
+
+        function addUserMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message user';
+            div.innerHTML = `<div class="label">你</div><div>${escapeHtml(text)}</div>`;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function createAssistantMessage() {
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            div.innerHTML = `<div class="label">助手</div><div class="content"></div>`;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return div.querySelector('.content');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message || isWaiting) return;
+
+            // 检查 token
+            if (!authToken) {
+                alert('请先登录');
+                showLoginPage();
+                return;
+            }
+
+            // 禁用输入
+            isWaiting = true;
+            messageInput.disabled = true;
+            sendBtn.disabled = true;
+            updateStatus('等待响应...', 'waiting');
+
+            // 显示用户消息
+            addUserMessage(message);
+            messageInput.value = '';
+
+            // 创建助手消息容器
+            currentAssistantMsg = createAssistantMessage();
+            responseBuffer = '';
+
+            // 使用 EventSource 进行 SSE 通信
+            const url = `/api/chat?token=${encodeURIComponent(authToken)}`;
+            
+            // 由于 EventSource 不支持 POST，我们需要先用 fetch 发送消息，然后服务端保存消息上下文
+            // 或者使用 fetch 获取 SSE 流（当前方式更灵活）
+            // 这里我们保持 fetch 方式，但正确处理 SSE 格式
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream',
+                    },
+                    body: JSON.stringify({ message }),
+                });
+
+                if (response.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    logout();
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error('请求失败: ' + response.status);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    // 处理 SSE 格式: 按双换行符分割事件
+                    const events = buffer.split('\n\n');
+                    buffer = events.pop() || ''; // 保留最后一个不完整的块
+
+                    for (const eventText of events) {
+                        if (!eventText.trim()) continue;
+                        
+                        // 解析 SSE 事件
+                        const lines = eventText.split('\n');
+                        let data = '';
+                        
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                data = line.slice(6);
+                            }
+                        }
+                        
+                        if (data && data !== '[DONE]') {
+                            try {
+                                const event = JSON.parse(data);
+                                handleSSEEvent(event);
+                            } catch (e) {
+                                console.log('解析失败:', data, e);
+                            }
+                        }
+                    }
+                }
+
+                // 处理缓冲区中剩余的数据
+                if (buffer.trim()) {
+                    const lines = buffer.split('\n');
+                    let data = '';
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            data = line.slice(6);
+                        }
+                    }
+                    
+                    if (data && data !== '[DONE]') {
+                        try {
+                            const event = JSON.parse(data);
+                            handleSSEEvent(event);
+                        } catch (e) {
+                            console.log('解析失败:', data, e);
+                        }
+                    }
+                }
+
+                updateStatus('准备就绪', '');
+            } catch (error) {
+                console.error('Error:', error);
+                currentAssistantMsg.innerHTML += '<br><span style="color: red;">错误: ' + error.message + '</span>';
+                updateStatus('发生错误', 'error');
+            } finally {
+                // 重新启用输入
+                isWaiting = false;
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                messageInput.focus();
+            }
+        }
+
+        function handleSSEEvent(event) {
+            switch (event.type) {
+                case 'thinking':
+                    currentAssistantMsg.innerHTML = '<span class="thinking">' + escapeHtml(event.data) + '</span>';
+                    break;
+                case 'response':
+                    console.log('Response:', event.data);
+                    responseBuffer += event.data;
+                    currentAssistantMsg.textContent = responseBuffer;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                    break;
+                case 'done':
+                    updateStatus('响应完成', 'connected');
+                    break;
+            }
+        }
+
+        // 回车发送
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !isWaiting) {
+                sendMessage();
+            }
+        });
+
+        // 登录页回车提交
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
+
+        // ========== AISPL生成功能 ==========
+
+        let isGeneratingAispl = false;
+
+        function openAisplModal() {
+            if (!authToken) {
+                alert('请先登录');
+                showLoginPage();
+                return;
+            }
+            document.getElementById('aisplModal').classList.add('active');
+            document.getElementById('aisplRequirement').value = '';
+            document.getElementById('aisplResult').textContent = '';
+        }
+
+        function closeAisplModal() {
+            document.getElementById('aisplModal').classList.remove('active');
+            isGeneratingAispl = false;
+            document.getElementById('aisplGenerateBtn').disabled = false;
+            document.getElementById('aisplGenerateBtn').innerHTML = '<i class="fas fa-magic"></i> 生成';
+        }
+
+        async function generateAispl() {
+            const requirement = document.getElementById('aisplRequirement').value.trim();
+            if (!requirement) {
+                alert('请输入日志分析需求');
+                return;
+            }
+
+            if (!authToken) {
+                alert('请先登录');
+                showLoginPage();
+                return;
+            }
+
+            if (isGeneratingAispl) return;
+
+            isGeneratingAispl = true;
+            const generateBtn = document.getElementById('aisplGenerateBtn');
+            const resultDiv = document.getElementById('aisplResult');
+
+            generateBtn.disabled = true;
+            generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成中...';
+            resultDiv.textContent = '';
+
+            try {
+                const url = `/api/generate-aispl?token=${encodeURIComponent(authToken)}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream',
+                    },
+                    body: JSON.stringify({ requirement }),
+                });
+
+                if (response.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    logout();
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error('请求失败: ' + response.status);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let result = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const events = buffer.split('\n\n');
+                    buffer = events.pop() || '';
+
+                    for (const eventText of events) {
+                        if (!eventText.trim()) continue;
+
+                        const lines = eventText.split('\n');
+                        let data = '';
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                data = line.slice(6);
+                            }
+                        }
+
+                        if (data && data !== '[DONE]') {
+                            try {
+                                const event = JSON.parse(data);
+                                if (event.type === 'response') {
+                                    result += event.data;
+                                    resultDiv.textContent = result;
+                                } else if (event.type === 'thinking') {
+                                    resultDiv.textContent = event.data;
+                                }
+                            } catch (e) {
+                                console.log('解析失败:', data, e);
+                            }
+                        }
+                    }
+                }
+
+                // 处理剩余数据
+                if (buffer.trim()) {
+                    const lines = buffer.split('\n');
+                    let data = '';
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            data = line.slice(6);
+                        }
+                    }
+                    if (data && data !== '[DONE]') {
+                        try {
+                            const event = JSON.parse(data);
+                            if (event.type === 'response') {
+                                result += event.data;
+                                resultDiv.textContent = result;
+                            }
+                        } catch (e) {
+                            console.log('解析失败:', data, e);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.textContent = '生成失败: ' + error.message;
+            } finally {
+                isGeneratingAispl = false;
+                generateBtn.disabled = false;
+                generateBtn.innerHTML = '<i class="fas fa-magic"></i> 生成';
+            }
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('aisplModal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('aispl-modal-overlay')) {
+                closeAisplModal();
+            }
+        });
+
+        // ESC键关闭弹窗
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAisplModal();
+                closeSkillModal();
+            }
+        });
+
+        // ========== Skill功能 ==========
+
+        let skillModal = null;
+        let skillList = [];
+        let selectedSkill = null;
+        let isExecutingSkill = false;
+
+        async function openSkillModal() {
+            if (!authToken) {
+                alert('请先登录');
+                showLoginPage();
+                return;
+            }
+            document.getElementById('skillModal').classList.add('active');
+            document.getElementById('skillInput').value = '';
+            document.getElementById('skillOutput').textContent = '';
+            document.getElementById('skillDetailName').textContent = '选择一个Skill';
+            document.getElementById('skillDetailDesc').textContent = '从左侧列表选择一个技能来执行';
+            document.getElementById('skillExecuteBtn').disabled = true;
+            selectedSkill = null;
+
+            // 加载skill列表
+            await loadSkillList();
+        }
+
+        function closeSkillModal() {
+            document.getElementById('skillModal').classList.remove('active');
+            isExecutingSkill = false;
+            document.getElementById('skillExecuteBtn').disabled = true;
+            document.getElementById('skillExecuteBtn').innerHTML = '<i class="fas fa-play"></i> 执行';
+        }
+
+        async function loadSkillList() {
+            const skillListEl = document.getElementById('skillList');
+
+            try {
+                const response = await fetch(`/api/skills?token=${encodeURIComponent(authToken)}`);
+                if (response.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    logout();
+                    return;
+                }
+
+                skillList = await response.json();
+
+                if (skillList.length === 0) {
+                    skillListEl.innerHTML = '<div class="skill-empty-hint">暂无Skill</div>';
+                    return;
+                }
+
+                skillListEl.innerHTML = skillList.map(skill => `
+                    <div class="skill-item" data-id="${skill.id}" onclick="selectSkill('${skill.id}')">
+                        <div class="skill-item-name">${escapeHtml(skill.name)}</div>
+                        <div class="skill-item-desc">${escapeHtml(skill.description || '')}</div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载Skill列表失败:', error);
+                skillListEl.innerHTML = '<div class="skill-empty-hint">加载失败</div>';
+            }
+        }
+
+        function selectSkill(skillId) {
+            const skill = skillList.find(s => s.id === skillId);
+            if (!skill) return;
+
+            selectedSkill = skill;
+
+            // 更新选中状态
+            document.querySelectorAll('.skill-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            document.querySelector(`.skill-item[data-id="${skillId}"]`).classList.add('selected');
+
+            // 更新详情
+            document.getElementById('skillDetailName').textContent = skill.name;
+            document.getElementById('skillDetailDesc').textContent = skill.description || '无描述';
+            document.getElementById('skillExecuteBtn').disabled = false;
+        }
+
+        async function executeSkill() {
+            if (!selectedSkill || isExecutingSkill) return;
+
+            const input = document.getElementById('skillInput').value.trim();
+            if (!input) {
+                alert('请输入Skill的输入内容');
+                return;
+            }
+
+            isExecutingSkill = true;
+            const executeBtn = document.getElementById('skillExecuteBtn');
+            const outputDiv = document.getElementById('skillOutput');
+
+            executeBtn.disabled = true;
+            executeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 执行中...';
+            outputDiv.textContent = '';
+
+            try {
+                const url = `/api/skills/execute?token=${encodeURIComponent(authToken)}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream',
+                    },
+                    body: JSON.stringify({
+                        skill_id: selectedSkill.id,
+                        input: input,
+                        context: {}
+                    }),
+                });
+
+                if (response.status === 401) {
+                    alert('登录已过期，请重新登录');
+                    logout();
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error('请求失败: ' + response.status);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let result = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    const events = buffer.split('\n\n');
+                    buffer = events.pop() || '';
+
+                    for (const eventText of events) {
+                        if (!eventText.trim()) continue;
+
+                        const lines = eventText.split('\n');
+                        let data = '';
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                data = line.slice(6);
+                            }
+                        }
+
+                        if (data && data !== '[DONE]') {
+                            try {
+                                const event = JSON.parse(data);
+                                if (event.type === 'thinking') {
+                                    outputDiv.textContent = event.data;
+                                } else if (event.type === 'response') {
+                                    result += event.data;
+                                    outputDiv.textContent = result;
+                                } else if (event.type === 'error') {
+                                    outputDiv.textContent = '错误: ' + event.data;
+                                }
+                            } catch (e) {
+                                console.log('解析失败:', data, e);
+                            }
+                        }
+                    }
+                }
+
+                // 处理剩余数据
+                if (buffer.trim()) {
+                    const lines = buffer.split('\n');
+                    let data = '';
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            data = line.slice(6);
+                        }
+                    }
+                    if (data && data !== '[DONE]') {
+                        try {
+                            const event = JSON.parse(data);
+                            if (event.type === 'response') {
+                                result += event.data;
+                                outputDiv.textContent = result;
+                            }
+                        } catch (e) {
+                            console.log('解析失败:', data, e);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                outputDiv.textContent = '执行失败: ' + error.message;
+            } finally {
+                isExecutingSkill = false;
+                executeBtn.disabled = false;
+                executeBtn.innerHTML = '<i class="fas fa-play"></i> 执行';
+            }
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('skillModal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('skill-modal-overlay')) {
+                closeSkillModal();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "golden-master": {
+      "name": "Golden Master",
+      "zip_url": "https://lightmake.site/api/v1/download?slug=golden-master",
+      "source": "skillhub",
+      "version": "1.0.4"
+    }
+  }
+}
